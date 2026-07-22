@@ -1,0 +1,15 @@
+faster-whisper
+whisperx
+stable-ts
+openai-whisper
+pywhispercpp
+nemo-toolkit[asr]
+useful-moonshine
+transformers
+soundfile
+librosa
+funasr
+vosk
+numpy
+torch
+torchaudio

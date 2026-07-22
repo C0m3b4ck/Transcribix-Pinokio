@@ -1,0 +1,9 @@
+Create an icon.png file (128x128 or 256x256 pixels) for the Pinokio project.
+The icon should represent speech-to-text or captioning functionality.
+
+Suggested design elements:
+- Microphone or audio waveform
+- Subtitle/caption text lines
+- Play button or video frame
+
+Save as: icon.png

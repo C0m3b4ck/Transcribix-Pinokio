@@ -1,0 +1,9 @@
+useful-moonshine
+transformers
+soundfile
+librosa
+funasr
+vosk
+numpy
+torch
+torchaudio
