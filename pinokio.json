@@ -2,7 +2,7 @@
   "title": "Transcribix",
   "description": "Fully offline speech-to-text transcription with 11 local AI models. Generates styled subtitles (SRT, ASS) and burns them directly onto video. Supports Whisper, Parakeet, Canary, Moonshine, SenseVoice, Vosk, and more. No API keys required.",
   "icon": "icon.png",
-  "author": "sb3x",
+  "author": "C0m3b4ck",
   "license": "Apache-2.0",
-  "repository": "https://github.com/sb3x/Transcribix"
+  "repository": "https://github.com/C0m3b4ck/Transcribix-Pinokio"
 }
