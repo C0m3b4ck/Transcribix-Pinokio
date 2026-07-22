@@ -1,4 +1,4 @@
-# Transcribix — Pinokio
+# Transcribix — Pinokio <img src=https://github.com/C0m3b4ck/Transcribix/blob/main/icon.png>
 
 1-click install and launch for [Transcribix](https://github.com/C0m3b4ck/Transcribix) — offline speech-to-text transcription with 11 local AI models.
 
