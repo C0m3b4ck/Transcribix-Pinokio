@@ -216,10 +216,10 @@ def _sanitize_error_message(exc: Exception) -> str:
 
 def on_transcribe(
     audio_file, audio_path, model_key, language, model_size,
-    words_per_chunk, font_name, font_color, font_size,
+    words_per_chunk, burn_into_video, font_name, font_color, font_size,
     position_name, outline, shadow,
 ):
-    """Run transcription and generate subtitles."""
+    """Run transcription and optionally burn subtitles into video."""
     tmp_dir = None
     try:
         # Determine input file
@@ -292,18 +292,36 @@ def on_transcribe(
         }
         words_to_ass(words, ass_path, prefs, words_per_chunk)
 
-        # Build status message (no internal paths exposed)
+        # Optionally burn subtitles into video
+        video_output = None
+        if burn_into_video:
+            try:
+                video_out_path = os.path.join(tmp_dir, "output_with_subtitles.mp4")
+                success = burn_subtitles_to_video(input_file, ass_path, video_out_path, prefs)
+                if success:
+                    video_output = gr.update(value=video_out_path, visible=True)
+                else:
+                    video_output = gr.update(value=None, visible=False)
+            except Exception:
+                video_output = gr.update(value=None, visible=False)
+
+        # Build status message
         status = (
             f"**Transcription complete!**\n\n"
             f"- Model: {model_info['name']}\n"
             f"- Words detected: {len(words)}\n"
             f"- Time: {elapsed:.1f}s"
         )
+        if burn_into_video:
+            status += "\n- Subtitles burned into video"
+        else:
+            status += "\n- Subtitle files ready (SRT + ASS)"
 
         return (
             gr.update(value=status, visible=True),
             gr.update(value=srt_path, visible=True),
             gr.update(value=ass_path, visible=True),
+            video_output if video_output is not None else gr.update(visible=False),
             words,
         )
 
@@ -499,6 +517,12 @@ with gr.Blocks(
                 info="Number of words per subtitle block",
             )
 
+            burn_into_video = gr.Checkbox(
+                label="Burn subtitles into video",
+                value=False,
+                info="Adds ~1-2 min processing time. Requires ffmpeg.",
+            )
+
     gr.Markdown("---")
 
     # Transcription button
@@ -515,23 +539,6 @@ with gr.Blocks(
             status_display = gr.Markdown(visible=False)
             srt_output = gr.File(label="SRT Subtitles", visible=False)
             ass_output = gr.File(label="ASS Subtitles (Styled)", visible=False)
-
-    gr.Markdown("---")
-
-    # Video burning section
-    gr.Markdown("## Burn Subtitles onto Video")
-    with gr.Row():
-        with gr.Column(scale=1):
-            video_upload = gr.File(
-                label="Upload Video (for burning subtitles)",
-                file_types=[".mp4", ".mkv", ".avi", ".mov"],
-            )
-        with gr.Column(scale=1):
-            burn_btn = gr.Button(
-                "Burn Subtitles",
-                variant="secondary",
-                size="lg",
-            )
             video_output = gr.File(label="Video with Subtitles", visible=False)
 
     # Event wiring
@@ -545,19 +552,10 @@ with gr.Blocks(
         fn=on_transcribe,
         inputs=[
             audio_upload, audio_path_input, model_dropdown, language_input, model_size_input,
-            words_per_chunk, font_dropdown, color_dropdown, font_size_slider,
+            words_per_chunk, burn_into_video, font_dropdown, color_dropdown, font_size_slider,
             position_dropdown, outline_slider, shadow_slider,
         ],
-        outputs=[status_display, srt_output, ass_output, gr.State([])],
-    )
-
-    burn_btn.click(
-        fn=on_burn_subtitles,
-        inputs=[
-            video_upload, ass_output, font_dropdown, color_dropdown,
-            font_size_slider, position_dropdown, outline_slider, shadow_slider,
-        ],
-        outputs=[video_output],
+        outputs=[status_display, srt_output, ass_output, video_output, gr.State([])],
     )
 
 

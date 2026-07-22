@@ -20,6 +20,7 @@ Models compared:
 
 import json
 import sys
+import os
 from pathlib import Path
 
 
@@ -54,6 +55,7 @@ class Style:
     BRIGHT_MAGENTA = "\033[95m"
     BRIGHT_CYAN = "\033[96m"
     BRIGHT_WHITE = "\033[97m"
+    BRIGHT_BLACK = "\033[90m"
 
     # Backgrounds
     BG_RED = "\033[41m"
@@ -124,6 +126,178 @@ def print_timestamp(start, end, text):
 def print_subtitle_stats(path, count, fmt="SRT"):
     """Print subtitle generation stats."""
     print(f"  {Style.BRIGHT_MAGENTA}{fmt}{Style.RESET} written to {Style.UNDERLINE}{path}{Style.RESET} ({Style.CYAN}{count} blocks{Style.RESET})")
+
+
+def print_banner():
+    """Print the application banner with system info."""
+    import platform
+    import os
+
+    print(f"""
+{Style.BG_BLUE}{Style.BRIGHT_WHITE}{Style.BOLD}
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║   ████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗     ║
+║   ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║     ║
+║      ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║     ║
+║      ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║     ║
+║      ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗║
+║      ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝║
+║                                                              ║
+║   Local AI Models for YouTube Captioning                     ║
+║   11 models compared • 100% offline • No API keys            ║
+║                                                              ║
+║   {Style.DIM}by C0m3b4ck • Apache License 2.0{Style.RESET}                          ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝{Style.RESET}
+""")
+
+    # System info
+    print(f"{Style.BOLD}System Information:{Style.RESET}")
+    print(f"  {Style.CYAN}OS:{Style.RESET}           {platform.system()} {platform.release()}")
+    print(f"  {Style.CYAN}Python:{Style.RESET}        {platform.python_version()}")
+    print(f"  {Style.CYAN}Machine:{Style.RESET}       {platform.machine()}")
+
+    # GPU info
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            vram = torch.cuda.get_device_properties(0).total_mem / (1024**3)
+            print(f"  {Style.CYAN}GPU:{Style.RESET}           {Style.BRIGHT_GREEN}{gpu_name}{Style.RESET} ({vram:.1f} GB VRAM)")
+        else:
+            print(f"  {Style.CYAN}GPU:{Style.RESET}           {Style.BRIGHT_YELLOW}Not available (CPU mode){Style.RESET}")
+    except ImportError:
+        print(f"  {Style.CYAN}GPU:{Style.RESET}           {Style.DIM}torch not installed{Style.RESET}")
+
+    # ffmpeg check
+    import subprocess
+    try:
+        result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
+        if result.returncode == 0:
+            version = result.stdout.split("\n")[0].split(" ")[2] if result.stdout else "unknown"
+            print(f"  {Style.CYAN}ffmpeg:{Style.RESET}        {Style.BRIGHT_GREEN}v{version}{Style.RESET}")
+        else:
+            print(f"  {Style.CYAN}ffmpeg:{Style.RESET}        {Style.BRIGHT_RED}Not working{Style.RESET}")
+    except FileNotFoundError:
+        print(f"  {Style.CYAN}ffmpeg:{Style.RESET}        {Style.BRIGHT_RED}Not found (required for video burning){Style.RESET}")
+
+    print(f"\n{Style.DIM}{'─' * 60}{Style.RESET}")
+
+
+def select_audio_file():
+    """Interactive file selection for audio/video files."""
+    import glob
+
+    # Supported formats
+    extensions = ["*.mp4", "*.wav", "*.mp3", "*.m4a", "*.flac", "*.ogg", "*.mkv", "*.avi", "*.mov", "*.webm"]
+
+    # Find all matching files
+    files = []
+    for ext in extensions:
+        files.extend(glob.glob(ext))
+        files.extend(glob.glob(f"**/{ext}", recursive=True))
+
+    # Remove duplicates and sort
+    files = sorted(set(files))
+
+    print(f"\n{Style.BOLD}Select Audio/Video File:{Style.RESET}")
+
+    if files:
+        print(f"\n{Style.CYAN}Found files in current directory:{Style.RESET}")
+        for i, f in enumerate(files[:10], 1):  # Show max 10 files
+            size = os.path.getsize(f) / (1024 * 1024) if os.path.exists(f) else 0
+            print(f"  {Style.GREEN}{i:2d}{Style.RESET}. {f} ({size:.1f} MB)")
+
+        if len(files) > 10:
+            print(f"  {Style.DIM}... and {len(files) - 10} more files{Style.RESET}")
+
+        print(f"\n  {Style.BRIGHT_YELLOW}0{Style.RESET}. Enter path manually")
+
+        while True:
+            choice = input(f"\n{Style.BRIGHT_YELLOW}Select file (0-{min(len(files), 10)}): {Style.RESET}").strip()
+
+            if choice == "0":
+                break
+            if choice.isdigit() and 1 <= int(choice) <= min(len(files), 10):
+                selected = files[int(choice) - 1]
+                print_info(f"Selected: {Style.UNDERLINE}{selected}{Style.RESET}")
+                return selected
+            print_error("Invalid choice. Try again.")
+    else:
+        print(f"  {Style.DIM}No media files found in current directory{Style.RESET}")
+
+    # Manual entry
+    while True:
+        path = input(f"{Style.BRIGHT_YELLOW}Enter file path: {Style.RESET}").strip()
+        if path and os.path.exists(path):
+            print_info(f"Selected: {Style.UNDERLINE}{path}{Style.RESET}")
+            return path
+        elif path:
+            print_error(f"File not found: {path}")
+        else:
+            print_error("Please enter a file path.")
+
+
+def print_model_info(model_key, model_info):
+    """Print detailed model information."""
+    print(f"\n{Style.BOLD}Model Details:{Style.RESET}")
+    print(f"  {Style.CYAN}Name:{Style.RESET}        {model_info['name']}")
+    print(f"  {Style.CYAN}Description:{Style.RESET} {model_info['description']}")
+    print(f"  {Style.CYAN}VRAM:{Style.RESET}        {model_info['vram']}")
+    print(f"  {Style.CYAN}WER:{Style.RESET}         {model_info['wer']}")
+    print(f"  {Style.CYAN}Speed:{Style.RESET}       {model_info['rtfx']}")
+    print(f"  {Style.CYAN}Languages:{Style.RESET}   {model_info['languages']}")
+
+
+def print_transcription_summary(words, elapsed, output_files):
+    """Print summary after transcription completes."""
+    print(f"\n{Style.BG_GREEN}{Style.BRIGHT_BLACK}{Style.BOLD} TRANSCRIPTION COMPLETE {Style.RESET}")
+    print(f"\n{Style.BOLD}Summary:{Style.RESET}")
+    print(f"  {Style.CYAN}Words detected:{Style.RESET}  {Style.BRIGHT_GREEN}{len(words)}{Style.RESET}")
+    print(f"  {Style.CYAN}Time elapsed:{Style.RESET}    {Style.BRIGHT_GREEN}{elapsed:.1f}s{Style.RESET}")
+    print(f"  {Style.CYAN}Words/second:{Style.RESET}    {Style.BRIGHT_GREEN}{len(words)/elapsed:.1f}{Style.RESET}" if elapsed > 0 else "")
+
+    if output_files:
+        print(f"\n{Style.BOLD}Output Files:{Style.RESET}")
+        for fmt, path in output_files.items():
+            print(f"  {Style.BRIGHT_MAGENTA}{fmt}{Style.RESET}: {Style.UNDERLINE}{path}{Style.RESET}")
+
+    print(f"\n{Style.DIM}{'─' * 60}{Style.RESET}")
+
+
+def print_position_visual(position_name):
+    """Print a visual representation of subtitle position."""
+    # Create a 3x3 grid to show position
+    grid = [
+        [" ", " ", " "],
+        [" ", " ", " "],
+        [" ", " ", " "],
+    ]
+
+    # Map position name to grid coordinates
+    position_map = {
+        "Bottom center": (2, 1),
+        "Top center": (0, 1),
+        "Middle center": (1, 1),
+        "Bottom left": (2, 0),
+        "Bottom right": (2, 2),
+        "Top left": (0, 0),
+        "Top right": (0, 2),
+    }
+
+    if position_name in position_map:
+        row, col = position_map[position_name]
+        grid[row][col] = "█"
+
+    print(f"\n  {Style.BOLD}Subtitle Position:{Style.RESET}")
+    print(f"    {Style.DIM}┌───┬───┬───┐{Style.RESET}")
+    for i, row in enumerate(grid):
+        cells = " │ ".join(row)
+        print(f"    {Style.DIM}│{Style.RESET} {cells} {Style.DIM}│{Style.RESET}")
+        if i < 2:
+            print(f"    {Style.DIM}├───┼───┼───┤{Style.RESET}")
+    print(f"    {Style.DIM}└───┴───┴───┘{Style.RESET}")
 
 
 # =============================================================================
@@ -336,6 +510,8 @@ def words_to_ass(words: list[dict], output_path: str, prefs: dict, words_per_gro
     Convert word-level timestamps into ASS subtitle file with custom styling.
     ASS format supports advanced styling (font, color, position, outline, shadow).
     """
+    import re
+
     def fmt(seconds: float) -> str:
         h = int(seconds // 3600)
         m = int((seconds % 3600) // 60)
@@ -353,6 +529,14 @@ def words_to_ass(words: list[dict], output_path: str, prefs: dict, words_per_gro
     primary_color = prefs["color"]
     outline_color = "&H00000000"  # Black outline
 
+    # Sanitize font name — only allow safe characters for ASS Style line
+    font_name = re.sub(r"[^a-zA-Z0-9\s\-\(\)\.]", "", prefs['font'])[:64]
+
+    # Validate numeric parameters
+    font_size = max(8, min(200, int(prefs['font_size'])))
+    outline_val = max(0, min(10, int(prefs['outline'])))
+    shadow_val = max(0, min(10, int(prefs['shadow'])))
+
     # ASS header
     ass_content = f"""[Script Info]
 Title: Transcribix Subtitles
@@ -363,7 +547,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{prefs['font']},{prefs['font_size']},{primary_color},&H000000FF,{outline_color},&H80000000,0,0,0,0,100,100,0,0,1,{prefs['outline']},{prefs['shadow']}, {alignment},20,20,30,1
+Style: Default,{font_name},{font_size},{primary_color},&H000000FF,{outline_color},&H80000000,0,0,0,0,100,100,0,0,1,{outline_val},{shadow_val}, {alignment},20,20,30,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -401,13 +585,23 @@ def burn_subtitles_to_video(
     Uses the subtitles filter for hardcoded subtitles.
     """
     import subprocess
+    import shlex
 
-    # Build ffmpeg filter for subtitles
-    # Note: special characters in paths need escaping for ffmpeg filter
+    # Validate paths exist before passing to ffmpeg
+    if not os.path.isfile(video_path):
+        print_error(f"Video file not found: {video_path}")
+        return False
+    if not os.path.isfile(subtitle_path):
+        print_error(f"Subtitle file not found: {subtitle_path}")
+        return False
+
+    # Build ffmpeg filter for subtitles using shlex.quote for safe escaping
+    # The subtitles filter requires colon and backslash escaping within the filter string
+    sub_path_quoted = shlex.quote(subtitle_path)
+    # ffmpeg filter syntax needs additional escaping beyond shell quoting
     sub_path_escaped = subtitle_path.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
-    # ffmpeg subtitles filter with force_style for additional styling
-    filter_str = f"subtitles='{sub_path_escaped}'"
+    filter_str = f"subtitles={sub_path_quoted}"
 
     cmd = [
         "ffmpeg", "-y",
@@ -418,12 +612,22 @@ def burn_subtitles_to_video(
     ]
 
     print(f"\n{Style.BRIGHT_CYAN}{Style.BOLD}Burning subtitles to video...{Style.RESET}")
-    print_dim(f"Command: {' '.join(cmd)}")
+    print_dim(f"Burning subtitles onto video...")
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        print_error("ffmpeg timed out after 600 seconds")
+        return False
+    except FileNotFoundError:
+        print_error("ffmpeg not found. Please install ffmpeg.")
+        return False
 
     if result.returncode != 0:
-        print_error(f"ffmpeg error:\n{result.stderr}")
+        # Log error safely — don't dump full stderr which may contain paths
+        error_lines = [l for l in result.stderr.strip().split("\n") if l.strip()]
+        last_lines = error_lines[-3:] if len(error_lines) > 3 else error_lines
+        print_error(f"ffmpeg failed (exit code {result.returncode}): {'; '.join(last_lines)}")
         return False
 
     print_success(f"Video saved to: {Style.UNDERLINE}{output_path}{Style.RESET}")
@@ -978,25 +1182,75 @@ def transcribe_whisper_cpp(
 # =============================================================================
 
 if __name__ == "__main__":
-    AUDIO_FILE = "my_video.mp4"
+    import time
+
+    # Print banner with system info
+    print_banner()
+
+    # Select audio file
+    AUDIO_FILE = select_audio_file()
+
+    # Validate file size (warn if > 2GB)
+    file_size = os.path.getsize(AUDIO_FILE) / (1024 * 1024)  # MB
+    if file_size > 2048:
+        print_warning(f"Large file ({file_size/1024:.1f} GB) — processing may be slow or fail due to memory limits.")
+    print_info(f"Input file: {Style.UNDERLINE}{AUDIO_FILE}{Style.RESET} ({file_size:.1f} MB)")
 
     # Ask user for subtitle styling preferences before transcription
     subtitle_prefs = get_subtitle_preferences()
     words_per_chunk = subtitle_prefs["words_per_chunk"]
 
-    print_model_header(1, "FASTER-WHISPER", "CTranslate2 Whisper — easiest setup, lowest VRAM")
+    # Show position visual
+    print_position_visual(subtitle_prefs["position_name"])
+
+    # Model info
+    model_info = {
+        "name": "Faster Whisper",
+        "description": "CTranslate2 Whisper — easiest setup, lowest VRAM",
+        "vram": "~2.5 GB (int8)",
+        "wer": "~7.4%",
+        "rtfx": "~600x",
+        "languages": "99",
+    }
+    print_model_info("faster-whisper", model_info)
+
+    # Start transcription
+    print(f"\n{Style.BG_CYAN}{Style.BRIGHT_BLACK}{Style.BOLD} STARTING TRANSCRIPTION {Style.RESET}")
+    start_time = time.time()
+
     words = transcribe_faster_whisper(AUDIO_FILE, model_size="large-v3", device="cpu")
 
+    elapsed = time.time() - start_time
+
+    # Generate output files
+    print(f"\n{Style.BG_MAGENTA}{Style.BRIGHT_BLACK}{Style.BOLD} GENERATING OUTPUT FILES {Style.RESET}")
+
     # Generate SRT for reference
-    words_to_srt(words, "captions_faster_whisper.srt", words_per_chunk)
+    srt_path = "captions_faster_whisper.srt"
+    words_to_srt(words, srt_path, words_per_chunk)
 
     # Generate styled ASS subtitles
     ass_path = "captions_faster_whisper.ass"
     words_to_ass(words, ass_path, subtitle_prefs, words_per_chunk)
 
-    # Burn subtitles onto video
-    output_video = "output_faster_whisper.mp4"
-    burn_subtitles_to_video(AUDIO_FILE, ass_path, output_video, subtitle_prefs)
+    # Ask if user wants to burn subtitles onto video
+    print(f"\n{Style.BOLD}Burn subtitles into video?{Style.RESET}")
+    burn_choice = input(f"{Style.BRIGHT_YELLOW}Burn subtitles onto video? (y/n, default n): {Style.RESET}").strip().lower()
+
+    output_files = {
+        "SRT": srt_path,
+        "ASS": ass_path,
+    }
+
+    if burn_choice in ("y", "yes"):
+        output_video = "output_faster_whisper.mp4"
+        burn_subtitles_to_video(AUDIO_FILE, ass_path, output_video, subtitle_prefs)
+        output_files["Video"] = output_video
+    else:
+        print_info("Skipping video burn — subtitle files generated only.")
+
+    # Print summary
+    print_transcription_summary(words, elapsed, output_files)
 
     # Uncomment any model you want to test:
 
