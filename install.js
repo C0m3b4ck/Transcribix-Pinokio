@@ -11,6 +11,14 @@ module.exports = {
         }
       }
     },
+    {
+      method: "shell.run",
+      params: {
+        message: [
+          "sudo apt install -y libcublas12",
+        ],
+      }
+    },
     // Whisper Variants
     {
       when: "{{args.group === 'whisper'}}",
