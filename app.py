@@ -198,8 +198,16 @@ def _sanitize_font_name(font_name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9\s\-\(\)\.]", "", font_name)[:64]
 
 
-def fix_grammar_punctuation(words, words_per_group=3, capitalize_sections=True):
-    """Fix grammar and punctuation in transcribed words."""
+def fix_grammar_punctuation(
+    words, words_per_group=3,
+    capitalize_i=True, capitalize_after_punct=True,
+    add_commas_conjunctions=True, add_commas_intros=True,
+    capitalize_start=True, capitalize_sections=True, add_periods=True,
+):
+    """Fix grammar and punctuation in transcribed words.
+
+    Each fix can be toggled individually.
+    """
     if not words:
         return words
     fixed = [dict(w) for w in words]
@@ -216,33 +224,35 @@ def fix_grammar_punctuation(words, words_per_group=3, capitalize_sections=True):
         if not text:
             continue
         lower = text.lower()
-        if lower in i_map:
+        if capitalize_i and lower in i_map:
             fixed[i] = dict(fixed[i])
             fixed[i]["word"] = i_map[lower]
             continue
-        if i > 0:
+        if capitalize_after_punct and i > 0:
             prev = fixed[i - 1].get("word", "").strip()
             if prev and prev[-1] in ".!?":
                 fixed[i] = dict(fixed[i])
                 fixed[i]["word"] = text[0].upper() + text[1:]
-    for i in range(1, len(fixed) - 1):
-        text = fixed[i].get("word", "").strip().lower()
-        prev = fixed[i - 1].get("word", "").strip()
-        if prev and text in conjunctions and prev[-1] not in ",.;:!?":
-            fixed[i] = dict(fixed[i])
-            fixed[i - 1] = dict(fixed[i - 1])
-            fixed[i - 1]["word"] = prev + ","
-    for start in range(0, len(fixed), words_per_group):
-        for j in range(start, min(start + words_per_group, len(fixed))):
-            text = fixed[j].get("word", "").strip().lower()
-            if text in intro_words and j + 1 < len(fixed):
-                next_w = fixed[j + 1].get("word", "").strip()
-                if next_w and next_w[-1] not in ",.;:!?":
-                    fixed[j] = dict(fixed[j])
-                    fixed[j + 1] = dict(fixed[j + 1])
-                    fixed[j + 1]["word"] = next_w + ","
-                break
-    if fixed and fixed[0].get("word", "").strip():
+    if add_commas_conjunctions:
+        for i in range(1, len(fixed) - 1):
+            text = fixed[i].get("word", "").strip().lower()
+            prev = fixed[i - 1].get("word", "").strip()
+            if prev and text in conjunctions and prev[-1] not in ",.;:!?":
+                fixed[i] = dict(fixed[i])
+                fixed[i - 1] = dict(fixed[i - 1])
+                fixed[i - 1]["word"] = prev + ","
+    if add_commas_intros:
+        for start in range(0, len(fixed), words_per_group):
+            for j in range(start, min(start + words_per_group, len(fixed))):
+                text = fixed[j].get("word", "").strip().lower()
+                if text in intro_words and j + 1 < len(fixed):
+                    next_w = fixed[j + 1].get("word", "").strip()
+                    if next_w and next_w[-1] not in ",.;:!?":
+                        fixed[j] = dict(fixed[j])
+                        fixed[j + 1] = dict(fixed[j + 1])
+                        fixed[j + 1]["word"] = next_w + ","
+                    break
+    if capitalize_start and fixed and fixed[0].get("word", "").strip():
         t = fixed[0]["word"].strip()
         fixed[0] = dict(fixed[0])
         fixed[0]["word"] = t[0].upper() + t[1:] if len(t) > 1 else t.upper()
@@ -254,14 +264,15 @@ def fix_grammar_punctuation(words, words_per_group=3, capitalize_sections=True):
                     fixed[j] = dict(fixed[j])
                     fixed[j]["word"] = t[0].upper() + t[1:] if len(t) > 1 else t.upper()
                     break
-    for start in range(0, len(fixed), words_per_group):
-        end = min(start + words_per_group, len(fixed)) - 1
-        if end < 0 or end >= len(fixed):
-            continue
-        t = fixed[end].get("word", "").strip()
-        if t and t[-1] not in "..,;:!?\"'":
-            fixed[end] = dict(fixed[end])
-            fixed[end]["word"] = t + "."
+    if add_periods:
+        for start in range(0, len(fixed), words_per_group):
+            end = min(start + words_per_group, len(fixed)) - 1
+            if end < 0 or end >= len(fixed):
+                continue
+            t = fixed[end].get("word", "").strip()
+            if t and t[-1] not in "..,;:!?\"'":
+                fixed[end] = dict(fixed[end])
+                fixed[end]["word"] = t + "."
     return fixed
 
 
@@ -282,7 +293,9 @@ def _sanitize_error_message(exc: Exception) -> str:
 def on_transcribe(
     audio_file, audio_path, model_key, language, model_size,
     words_per_chunk, burn_into_video, font_name, font_color, font_size,
-    position_name, outline, shadow, fix_grammar, capitalize_sections,
+    position_name, outline, shadow,
+    capitalize_i, capitalize_after_punct, add_commas_conjunctions,
+    add_commas_intros, capitalize_start, capitalize_sections, add_periods,
 ):
     """Run transcription and optionally burn subtitles into video."""
     tmp_dir = None
@@ -336,9 +349,17 @@ def on_transcribe(
         if not words:
             raise gr.Error("No speech detected in the audio.")
 
-        # Apply grammar fix if requested
-        if fix_grammar:
-            words = fix_grammar_punctuation(words, words_per_chunk, capitalize_sections)
+        # Apply grammar fix
+        words = fix_grammar_punctuation(
+            words, words_per_chunk,
+            capitalize_i=capitalize_i,
+            capitalize_after_punct=capitalize_after_punct,
+            add_commas_conjunctions=add_commas_conjunctions,
+            add_commas_intros=add_commas_intros,
+            capitalize_start=capitalize_start,
+            capitalize_sections=capitalize_sections,
+            add_periods=add_periods,
+        )
 
         # Create output directory
         tmp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
@@ -595,15 +616,38 @@ with gr.Blocks(
             )
 
             gr.Markdown("## Text Fix")
-            fix_grammar = gr.Checkbox(
-                label="Fix Grammar & Punctuation",
-                value=False,
-                info="Adds commas/periods, capitalizes 'I' and sentence starts.",
+            gr.Markdown("**Grammar Fixes** (each toggleable)")
+            capitalize_i = gr.Checkbox(
+                label='Capitalize "I" and variants',
+                value=True,
+                info="Fixes i, i'm, i've, i'll, i'd",
+            )
+            capitalize_after_punct = gr.Checkbox(
+                label="Capitalize after sentence-ending punctuation",
+                value=True,
+                info="Capitalize word after . ! ?",
+            )
+            add_commas_conjunctions = gr.Checkbox(
+                label="Add commas before conjunctions",
+                value=True,
+                info="and, but, or, so, because, however, etc.",
+            )
+            add_commas_intros = gr.Checkbox(
+                label="Add commas after introductory words",
+                value=True,
+                info="well, now, yes, no, oh, hey, etc.",
+            )
+            capitalize_start = gr.Checkbox(
+                label="Capitalize first word of transcription",
+                value=True,
             )
             capitalize_sections = gr.Checkbox(
-                label="Capitalize Beginning of Each Section",
+                label="Capitalize first word of each subtitle chunk",
                 value=True,
-                info="Capitalizes first word of every subtitle chunk.",
+            )
+            add_periods = gr.Checkbox(
+                label="Add periods at end of subtitle chunks",
+                value=True,
             )
 
     gr.Markdown("---")
@@ -636,7 +680,9 @@ with gr.Blocks(
         inputs=[
             audio_upload, audio_path_input, model_dropdown, language_input, model_size_input,
             words_per_chunk, burn_into_video, font_dropdown, color_dropdown, font_size_slider,
-            position_dropdown, outline_slider, shadow_slider, fix_grammar, capitalize_sections,
+            position_dropdown, outline_slider, shadow_slider,
+            capitalize_i, capitalize_after_punct, add_commas_conjunctions,
+            add_commas_intros, capitalize_start, capitalize_sections, add_periods,
         ],
         outputs=[status_display, srt_output, ass_output, video_output, gr.State([])],
     )
