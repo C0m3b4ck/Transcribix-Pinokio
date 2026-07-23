@@ -1,8 +1,6 @@
 import os
 import sys
-import tempfile
 import time
-import shutil
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -271,8 +269,9 @@ def on_transcribe(
         if not words:
             raise gr.Error("No speech detected in the audio.")
 
-        # Create temp directory for outputs
-        tmp_dir = tempfile.mkdtemp(prefix="transcribix_")
+        # Create output directory
+        tmp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+        os.makedirs(tmp_dir, exist_ok=True)
 
         # Generate SRT
         srt_path = os.path.join(tmp_dir, "subtitles.srt")
@@ -345,7 +344,8 @@ def on_burn_subtitles(
     font_name = _sanitize_font_name(font_name)
 
     # Create output path
-    tmp_dir = tempfile.mkdtemp(prefix="transcribix_")
+    tmp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+    os.makedirs(tmp_dir, exist_ok=True)
     output_path = os.path.join(tmp_dir, "output_with_subtitles.mp4")
 
     # Build preferences
