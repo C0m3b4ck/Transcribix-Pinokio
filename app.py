@@ -198,6 +198,73 @@ def _sanitize_font_name(font_name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9\s\-\(\)\.]", "", font_name)[:64]
 
 
+def fix_grammar_punctuation(words, words_per_group=3, capitalize_sections=True):
+    """Fix grammar and punctuation in transcribed words."""
+    if not words:
+        return words
+    fixed = [dict(w) for w in words]
+    i_map = {"i": "I", "i'm": "I'm", "i've": "I've", "i'll": "I'll", "i'd": "I'd"}
+    conjunctions = {"and", "but", "or", "so", "because", "although", "however",
+                    "therefore", "moreover", "furthermore", "nevertheless",
+                    "meanwhile", "otherwise", "instead", "yet", "nor"}
+    intro_words = {"well", "now", "so", "yes", "no", "oh", "hey", "okay",
+                   "ok", "right", "look", "listen", "basically", "actually",
+                   "honestly", "anyway", "anyways", "then",
+                   "first", "second", "third", "finally", "also"}
+    for i in range(len(fixed)):
+        text = fixed[i].get("word", "").strip()
+        if not text:
+            continue
+        lower = text.lower()
+        if lower in i_map:
+            fixed[i] = dict(fixed[i])
+            fixed[i]["word"] = i_map[lower]
+            continue
+        if i > 0:
+            prev = fixed[i - 1].get("word", "").strip()
+            if prev and prev[-1] in ".!?":
+                fixed[i] = dict(fixed[i])
+                fixed[i]["word"] = text[0].upper() + text[1:]
+    for i in range(1, len(fixed) - 1):
+        text = fixed[i].get("word", "").strip().lower()
+        prev = fixed[i - 1].get("word", "").strip()
+        if prev and text in conjunctions and prev[-1] not in ",.;:!?":
+            fixed[i] = dict(fixed[i])
+            fixed[i - 1] = dict(fixed[i - 1])
+            fixed[i - 1]["word"] = prev + ","
+    for start in range(0, len(fixed), words_per_group):
+        for j in range(start, min(start + words_per_group, len(fixed))):
+            text = fixed[j].get("word", "").strip().lower()
+            if text in intro_words and j + 1 < len(fixed):
+                next_w = fixed[j + 1].get("word", "").strip()
+                if next_w and next_w[-1] not in ",.;:!?":
+                    fixed[j] = dict(fixed[j])
+                    fixed[j + 1] = dict(fixed[j + 1])
+                    fixed[j + 1]["word"] = next_w + ","
+                break
+    if fixed and fixed[0].get("word", "").strip():
+        t = fixed[0]["word"].strip()
+        fixed[0] = dict(fixed[0])
+        fixed[0]["word"] = t[0].upper() + t[1:] if len(t) > 1 else t.upper()
+    if capitalize_sections:
+        for start in range(0, len(fixed), words_per_group):
+            for j in range(start, min(start + words_per_group, len(fixed))):
+                t = fixed[j].get("word", "").strip()
+                if t:
+                    fixed[j] = dict(fixed[j])
+                    fixed[j]["word"] = t[0].upper() + t[1:] if len(t) > 1 else t.upper()
+                    break
+    for start in range(0, len(fixed), words_per_group):
+        end = min(start + words_per_group, len(fixed)) - 1
+        if end < 0 or end >= len(fixed):
+            continue
+        t = fixed[end].get("word", "").strip()
+        if t and t[-1] not in "..,;:!?\"'":
+            fixed[end] = dict(fixed[end])
+            fixed[end]["word"] = t + "."
+    return fixed
+
+
 def _sanitize_error_message(exc: Exception) -> str:
     """Return a user-friendly error message without leaking internals."""
     error_type = type(exc).__name__
@@ -215,7 +282,7 @@ def _sanitize_error_message(exc: Exception) -> str:
 def on_transcribe(
     audio_file, audio_path, model_key, language, model_size,
     words_per_chunk, burn_into_video, font_name, font_color, font_size,
-    position_name, outline, shadow,
+    position_name, outline, shadow, fix_grammar, capitalize_sections,
 ):
     """Run transcription and optionally burn subtitles into video."""
     tmp_dir = None
@@ -268,6 +335,10 @@ def on_transcribe(
 
         if not words:
             raise gr.Error("No speech detected in the audio.")
+
+        # Apply grammar fix if requested
+        if fix_grammar:
+            words = fix_grammar_punctuation(words, words_per_chunk, capitalize_sections)
 
         # Create output directory
         tmp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
@@ -523,6 +594,18 @@ with gr.Blocks(
                 info="Adds ~1-2 min processing time. Requires ffmpeg.",
             )
 
+            gr.Markdown("## Text Fix")
+            fix_grammar = gr.Checkbox(
+                label="Fix Grammar & Punctuation",
+                value=False,
+                info="Adds commas/periods, capitalizes 'I' and sentence starts.",
+            )
+            capitalize_sections = gr.Checkbox(
+                label="Capitalize Beginning of Each Section",
+                value=True,
+                info="Capitalizes first word of every subtitle chunk.",
+            )
+
     gr.Markdown("---")
 
     # Transcription button
@@ -553,7 +636,7 @@ with gr.Blocks(
         inputs=[
             audio_upload, audio_path_input, model_dropdown, language_input, model_size_input,
             words_per_chunk, burn_into_video, font_dropdown, color_dropdown, font_size_slider,
-            position_dropdown, outline_slider, shadow_slider,
+            position_dropdown, outline_slider, shadow_slider, fix_grammar, capitalize_sections,
         ],
         outputs=[status_display, srt_output, ass_output, video_output, gr.State([])],
     )
