@@ -230,11 +230,13 @@ def select_audio_file():
     # Manual entry
     while True:
         path = input(f"{Style.BRIGHT_YELLOW}Enter file path: {Style.RESET}").strip()
-        if path and os.path.exists(path):
-            print_info(f"Selected: {Style.UNDERLINE}{path}{Style.RESET}")
-            return path
-        elif path:
-            print_error(f"File not found: {path}")
+        if path:
+            real_path = os.path.realpath(path)
+            if os.path.isfile(real_path):
+                print_info(f"Selected: {Style.UNDERLINE}{real_path}{Style.RESET}")
+                return real_path
+            else:
+                print_error("File not found.")
         else:
             print_error("Please enter a file path.")
 
@@ -304,11 +306,11 @@ def print_position_visual(position_name):
 # SHARED: SRT/VTT generation from word timestamps
 # =============================================================================
 
-def words_to_srt(words: list[dict], output_path: str, words_per_group: int = 3):
+def words_to_srt(words: list[dict], output_path: str, words_per_group: int = 3, gap_threshold: float = 1.0):
     """
     Convert word-level timestamps into SRT subtitles.
-    Groups words into chunks of `words_per_group` for "a few words at a time" captions.
 
+    Splits subtitle chunks when there's a gap > gap_threshold seconds between words.
     Each dict in `words` must have: {"word": str, "start": float, "end": float}
     """
     def fmt(seconds: float) -> str:
@@ -318,9 +320,19 @@ def words_to_srt(words: list[dict], output_path: str, words_per_group: int = 3):
         return f"{int(h):02d}:{int(m):02d}:{int(s):02d},{ms:03d}"
 
     groups = []
-    for i in range(0, len(words), words_per_group):
-        chunk = words[i:i + words_per_group]
-        text = " ".join(w["word"].strip() for w in chunk)
+    chunk = []
+    for w in words:
+        if chunk and (w["start"] - chunk[-1]["end"]) > gap_threshold:
+            text = " ".join(c["word"].strip() for c in chunk)
+            groups.append((chunk[0]["start"], chunk[-1]["end"], text))
+            chunk = []
+        chunk.append(w)
+        if len(chunk) >= words_per_group:
+            text = " ".join(c["word"].strip() for c in chunk)
+            groups.append((chunk[0]["start"], chunk[-1]["end"], text))
+            chunk = []
+    if chunk:
+        text = " ".join(c["word"].strip() for c in chunk)
         groups.append((chunk[0]["start"], chunk[-1]["end"], text))
 
     lines = []
@@ -331,8 +343,11 @@ def words_to_srt(words: list[dict], output_path: str, words_per_group: int = 3):
     print_subtitle_stats(output_path, len(groups), "SRT")
 
 
-def words_to_vtt(words: list[dict], output_path: str, words_per_group: int = 3):
-    """Same as SRT but in WebVTT format."""
+def words_to_vtt(words: list[dict], output_path: str, words_per_group: int = 3, gap_threshold: float = 1.0):
+    """Same as SRT but in WebVTT format.
+
+    Splits subtitle chunks when there's a gap > gap_threshold seconds between words.
+    """
     def fmt(seconds: float) -> str:
         h, rem = divmod(seconds, 3600)
         m, s = divmod(rem, 60)
@@ -340,9 +355,19 @@ def words_to_vtt(words: list[dict], output_path: str, words_per_group: int = 3):
         return f"{int(h):02d}:{int(m):02d}:{int(s):02d}.{ms:03d}"
 
     groups = []
-    for i in range(0, len(words), words_per_group):
-        chunk = words[i:i + words_per_group]
-        text = " ".join(w["word"].strip() for w in chunk)
+    chunk = []
+    for w in words:
+        if chunk and (w["start"] - chunk[-1]["end"]) > gap_threshold:
+            text = " ".join(c["word"].strip() for c in chunk)
+            groups.append((chunk[0]["start"], chunk[-1]["end"], text))
+            chunk = []
+        chunk.append(w)
+        if len(chunk) >= words_per_group:
+            text = " ".join(c["word"].strip() for c in chunk)
+            groups.append((chunk[0]["start"], chunk[-1]["end"], text))
+            chunk = []
+    if chunk:
+        text = " ".join(c["word"].strip() for c in chunk)
         groups.append((chunk[0]["start"], chunk[-1]["end"], text))
 
     lines = ["WEBVTT", ""]
@@ -505,9 +530,11 @@ def get_subtitle_preferences():
     }
 
 
-def words_to_ass(words: list[dict], output_path: str, prefs: dict, words_per_group: int = 3):
+def words_to_ass(words: list[dict], output_path: str, prefs: dict, words_per_group: int = 3, gap_threshold: float = 1.0):
     """
     Convert word-level timestamps into ASS subtitle file with custom styling.
+
+    Splits subtitle chunks when there's a gap > gap_threshold seconds between words.
     ASS format supports advanced styling (font, color, position, outline, shadow).
     """
     import re
@@ -553,11 +580,21 @@ Style: Default,{font_name},{font_size},{primary_color},&H000000FF,{outline_color
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-    # Group words into chunks
+    # Group words into chunks with gap detection
     groups = []
-    for i in range(0, len(words), words_per_group):
-        chunk = words[i:i + words_per_group]
-        text = " ".join(w["word"].strip() for w in chunk)
+    chunk = []
+    for w in words:
+        if chunk and (w["start"] - chunk[-1]["end"]) > gap_threshold:
+            text = " ".join(c["word"].strip() for c in chunk)
+            groups.append((chunk[0]["start"], chunk[-1]["end"], text))
+            chunk = []
+        chunk.append(w)
+        if len(chunk) >= words_per_group:
+            text = " ".join(c["word"].strip() for c in chunk)
+            groups.append((chunk[0]["start"], chunk[-1]["end"], text))
+            chunk = []
+    if chunk:
+        text = " ".join(c["word"].strip() for c in chunk)
         groups.append((chunk[0]["start"], chunk[-1]["end"], text))
 
     # Generate dialogue lines
@@ -624,10 +661,7 @@ def burn_subtitles_to_video(
         return False
 
     if result.returncode != 0:
-        # Log error safely — don't dump full stderr which may contain paths
-        error_lines = [l for l in result.stderr.strip().split("\n") if l.strip()]
-        last_lines = error_lines[-3:] if len(error_lines) > 3 else error_lines
-        print_error(f"ffmpeg failed (exit code {result.returncode}): {'; '.join(last_lines)}")
+        print_error("ffmpeg failed. Check that ffmpeg is installed and the video file is valid.")
         return False
 
     print_success(f"Video saved to: {Style.UNDERLINE}{output_path}{Style.RESET}")
@@ -1192,6 +1226,9 @@ if __name__ == "__main__":
 
     # Validate file size (warn if > 2GB)
     file_size = os.path.getsize(AUDIO_FILE) / (1024 * 1024)  # MB
+    if file_size > 10240:
+        print_error("File too large (>10GB).")
+        return
     if file_size > 2048:
         print_warning(f"Large file ({file_size/1024:.1f} GB) — processing may be slow or fail due to memory limits.")
     print_info(f"Input file: {Style.UNDERLINE}{AUDIO_FILE}{Style.RESET} ({file_size:.1f} MB)")

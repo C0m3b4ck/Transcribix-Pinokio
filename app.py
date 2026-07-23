@@ -292,7 +292,7 @@ def _sanitize_error_message(exc: Exception) -> str:
 
 def on_transcribe(
     audio_file, audio_path, model_key, language, model_size,
-    words_per_chunk, burn_into_video, font_name, font_color, font_size,
+    words_per_chunk, gap_threshold, burn_into_video, font_name, font_color, font_size,
     position_name, outline, shadow,
     capitalize_i, capitalize_after_punct, add_commas_conjunctions,
     add_commas_intros, capitalize_start, capitalize_sections, add_periods,
@@ -367,7 +367,7 @@ def on_transcribe(
 
         # Generate SRT
         srt_path = os.path.join(tmp_dir, "subtitles.srt")
-        words_to_srt(words, srt_path, words_per_chunk)
+        words_to_srt(words, srt_path, words_per_chunk, gap_threshold)
 
         # Generate ASS with styling
         ass_path = os.path.join(tmp_dir, "subtitles.ass")
@@ -381,7 +381,7 @@ def on_transcribe(
             "outline": outline,
             "shadow": shadow,
         }
-        words_to_ass(words, ass_path, prefs, words_per_chunk)
+        words_to_ass(words, ass_path, prefs, words_per_chunk, gap_threshold)
 
         # Optionally burn subtitles into video
         video_output = None
@@ -609,6 +609,15 @@ with gr.Blocks(
                 info="Number of words per subtitle block",
             )
 
+            gap_threshold = gr.Slider(
+                minimum=0.1,
+                maximum=5.0,
+                value=1.0,
+                step=0.1,
+                label="Gap Threshold (seconds)",
+                info="Split subtitle chunks when there's a pause longer than this",
+            )
+
             burn_into_video = gr.Checkbox(
                 label="Burn subtitles into video",
                 value=False,
@@ -679,7 +688,7 @@ with gr.Blocks(
         fn=on_transcribe,
         inputs=[
             audio_upload, audio_path_input, model_dropdown, language_input, model_size_input,
-            words_per_chunk, burn_into_video, font_dropdown, color_dropdown, font_size_slider,
+            words_per_chunk, gap_threshold, burn_into_video, font_dropdown, color_dropdown, font_size_slider,
             position_dropdown, outline_slider, shadow_slider,
             capitalize_i, capitalize_after_punct, add_commas_conjunctions,
             add_commas_intros, capitalize_start, capitalize_sections, add_periods,
