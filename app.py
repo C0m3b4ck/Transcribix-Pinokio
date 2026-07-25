@@ -220,6 +220,50 @@ def extract_text_from_words(words: list) -> str:
     return " ".join(w.get("word", "").strip() for w in words)
 
 
+def burn_only_subtitles(
+    audio_file, words_per_chunk, font_name, font_color, font_size,
+    position_name, outline, shadow,
+):
+    """Burn existing subtitle files into video without regenerating."""
+    try:
+        if not audio_file:
+            raise gr.Error("Please upload a video file first.")
+
+        font_name = _sanitize_font_name(font_name)
+        words_per_chunk = max(1, min(8, int(words_per_chunk)))
+
+        tmp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+        ass_path = os.path.join(tmp_dir, "subtitles.ass")
+        if not os.path.exists(ass_path):
+            raise gr.Error("No subtitle file found. Run transcription or regenerate first.")
+
+        prefs = {
+            "font": font_name,
+            "color": COLOR_PRESETS.get(font_color, "&H00FFFFFF"),
+            "color_name": font_color,
+            "font_size": font_size,
+            "position": POSITION_PRESETS.get(position_name, 2),
+            "position_name": position_name,
+            "outline": outline,
+            "shadow": shadow,
+        }
+
+        input_path = audio_file.name if hasattr(audio_file, 'name') else audio_file
+        video_out_path = os.path.join(tmp_dir, "output_with_subtitles.mp4")
+        success = burn_subtitles_to_video(input_path, ass_path, video_out_path, prefs)
+        if not success:
+            raise gr.Error("Failed to burn subtitles. Check ffmpeg and video file.")
+
+        return (
+            gr.update(value=f"**Subtitles burned into video!**\n\n- File: output_with_subtitles.mp4", visible=True),
+            gr.update(value=video_out_path, visible=True),
+        )
+    except gr.Error:
+        raise
+    except Exception as e:
+        raise gr.Error(_sanitize_error_message(e))
+
+
 def regenerate_subtitles(
     edited_text, words_state, words_per_chunk, gap_threshold,
     font_name, font_color, font_size, position_name, outline, shadow,
@@ -764,6 +808,7 @@ with gr.Blocks(
                 interactive=True,
             )
             regenerate_btn = gr.Button("Regenerate Subtitles", variant="secondary")
+            burn_only_btn = gr.Button("Burn into Video", variant="secondary")
             srt_output = gr.File(label="SRT Subtitles", visible=False)
             ass_output = gr.File(label="ASS Subtitles (Styled)", visible=False)
             video_output = gr.File(label="Video with Subtitles", visible=False)
@@ -797,6 +842,15 @@ with gr.Blocks(
             burn_into_video, audio_upload,
         ],
         outputs=[status_display, srt_output, ass_output, video_output, transcription_text],
+    )
+
+    burn_only_btn.click(
+        fn=burn_only_subtitles,
+        inputs=[
+            audio_upload, words_per_chunk, font_dropdown, color_dropdown, font_size_slider,
+            position_dropdown, outline_slider, shadow_slider,
+        ],
+        outputs=[status_display, video_output],
     )
 
 
