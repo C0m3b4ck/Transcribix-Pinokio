@@ -221,20 +221,23 @@ def extract_text_from_words(words: list) -> str:
 
 
 def burn_only_subtitles(
-    sub_path_state, audio_file, font_name, font_color, font_size,
-    position_name, outline, shadow,
+    edited_text, words_state, audio_file, words_per_chunk, gap_threshold,
+    font_name, font_color, font_size, position_name, outline, shadow,
 ):
-    """Burn existing subtitle files into video without regenerating."""
+    """Regenerate subtitles from current transcript text and burn into video."""
     try:
         if not audio_file:
             raise gr.Error("Please upload a video file first.")
 
+        words = text_to_words(edited_text, words_state)
+        if not words:
+            raise gr.Error("No words to burn. Edit the transcript first.")
+
         font_name = _sanitize_font_name(font_name)
+        words_per_chunk = max(1, min(8, int(words_per_chunk)))
 
-        sub_path = sub_path_state
-
-        if not sub_path or not os.path.exists(sub_path):
-            raise gr.Error("No subtitle file found. Run transcription or regenerate first.")
+        tmp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+        os.makedirs(tmp_dir, exist_ok=True)
 
         prefs = {
             "font": font_name,
@@ -247,16 +250,19 @@ def burn_only_subtitles(
             "shadow": shadow,
         }
 
-        tmp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+        ass_path = os.path.join(tmp_dir, "subtitles.ass")
+        words_to_ass(words, ass_path, prefs, words_per_chunk, gap_threshold)
+
         input_path = audio_file.name if hasattr(audio_file, 'name') else audio_file
         video_out_path = os.path.join(tmp_dir, "output_with_subtitles.mp4")
-        success = burn_subtitles_to_video(input_path, sub_path, video_out_path, prefs)
+        success = burn_subtitles_to_video(input_path, ass_path, video_out_path, prefs)
         if not success:
             raise gr.Error("Failed to burn subtitles. Check ffmpeg and video file.")
 
         return (
-            gr.update(value=f"**Subtitles burned into video!**\n\n- File: output_with_subtitles.mp4", visible=True),
+            gr.update(value=f"**Subtitles burned into video!**\n\n- Words: {len(words)}\n- File: output_with_subtitles.mp4", visible=True),
             gr.update(value=video_out_path, visible=True),
+            edited_text,
         )
     except gr.Error:
         raise
@@ -849,10 +855,11 @@ with gr.Blocks(
     burn_only_btn.click(
         fn=burn_only_subtitles,
         inputs=[
-            sub_path_state, audio_upload, font_dropdown, color_dropdown, font_size_slider,
+            transcription_text, words_state, audio_upload, words_per_chunk, gap_threshold,
+            font_dropdown, color_dropdown, font_size_slider,
             position_dropdown, outline_slider, shadow_slider,
         ],
-        outputs=[status_display, video_output],
+        outputs=[status_display, video_output, transcription_text],
     )
 
 
