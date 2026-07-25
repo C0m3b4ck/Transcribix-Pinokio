@@ -198,6 +198,90 @@ def _sanitize_font_name(font_name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9\s\-\(\)\.]", "", font_name)[:64]
 
 
+def text_to_words(edited_text: str, original_words: list) -> list:
+    """Map edited text back to word objects, reusing original timing."""
+    if not edited_text or not edited_text.strip():
+        return []
+    new_words_list = edited_text.strip().split()
+    if not original_words:
+        return [{"word": w, "start": 0.0, "end": 0.0} for w in new_words_list]
+    orig_count = len(original_words)
+    result = []
+    for i, w in enumerate(new_words_list):
+        if i < orig_count:
+            result.append({"word": w, "start": original_words[i]["start"], "end": original_words[i]["end"]})
+        else:
+            result.append({"word": w, "start": original_words[-1]["start"], "end": original_words[-1]["end"]})
+    return result
+
+
+def extract_text_from_words(words: list) -> str:
+    """Extract plain text from word list."""
+    return " ".join(w.get("word", "").strip() for w in words)
+
+
+def regenerate_subtitles(
+    edited_text, words_state, words_per_chunk, gap_threshold,
+    font_name, font_color, font_size, position_name, outline, shadow,
+    burn_into_video, audio_file,
+):
+    """Regenerate subtitle files from edited transcript text."""
+    try:
+        words = text_to_words(edited_text, words_state)
+        if not words:
+            raise gr.Error("Empty transcript.")
+
+        font_name = _sanitize_font_name(font_name)
+        words_per_chunk = max(1, min(8, int(words_per_chunk)))
+
+        tmp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+        os.makedirs(tmp_dir, exist_ok=True)
+
+        srt_path = os.path.join(tmp_dir, "subtitles.srt")
+        words_to_srt(words, srt_path, words_per_chunk, gap_threshold)
+
+        ass_path = os.path.join(tmp_dir, "subtitles.ass")
+        prefs = {
+            "font": font_name,
+            "color": COLOR_PRESETS.get(font_color, "&H00FFFFFF"),
+            "color_name": font_color,
+            "font_size": font_size,
+            "position": POSITION_PRESETS.get(position_name, 2),
+            "position_name": position_name,
+            "outline": outline,
+            "shadow": shadow,
+        }
+        words_to_ass(words, ass_path, prefs, words_per_chunk, gap_threshold)
+
+        video_output = None
+        if burn_into_video and audio_file:
+            try:
+                video_out_path = os.path.join(tmp_dir, "output_with_subtitles.mp4")
+                success = burn_subtitles_to_video(audio_file.name if hasattr(audio_file, 'name') else audio_file, ass_path, video_out_path, prefs)
+                if success:
+                    video_output = gr.update(value=video_out_path, visible=True)
+            except Exception:
+                video_output = gr.update(value=None, visible=False)
+
+        status = (
+            f"**Subtitles regenerated from edited transcript!**\n\n"
+            f"- Words: {len(words)}\n"
+            f"- Files: SRT + ASS"
+        )
+
+        return (
+            gr.update(value=status, visible=True),
+            gr.update(value=srt_path, visible=True),
+            gr.update(value=ass_path, visible=True),
+            video_output if video_output is not None else gr.update(visible=False),
+            edited_text,
+        )
+    except gr.Error:
+        raise
+    except Exception as e:
+        raise gr.Error(_sanitize_error_message(e))
+
+
 def fix_grammar_punctuation(
     words, words_per_group=3,
     capitalize_i=True, capitalize_after_punct=True,
@@ -414,6 +498,7 @@ def on_transcribe(
             gr.update(value=ass_path, visible=True),
             video_output if video_output is not None else gr.update(visible=False),
             words,
+            extract_text_from_words(words),
         )
 
     except gr.Error:
@@ -673,9 +758,16 @@ with gr.Blocks(
     with gr.Row():
         with gr.Column(scale=2):
             status_display = gr.Markdown(visible=False)
+            transcription_text = gr.Textbox(
+                label="Transcription",
+                lines=8,
+                interactive=True,
+            )
+            regenerate_btn = gr.Button("Regenerate Subtitles", variant="secondary")
             srt_output = gr.File(label="SRT Subtitles", visible=False)
             ass_output = gr.File(label="ASS Subtitles (Styled)", visible=False)
             video_output = gr.File(label="Video with Subtitles", visible=False)
+            words_state = gr.State([])
 
     # Event wiring
     model_dropdown.change(
@@ -693,7 +785,18 @@ with gr.Blocks(
             capitalize_i, capitalize_after_punct, add_commas_conjunctions,
             add_commas_intros, capitalize_start, capitalize_sections, add_periods,
         ],
-        outputs=[status_display, srt_output, ass_output, video_output, gr.State([])],
+        outputs=[status_display, srt_output, ass_output, video_output, words_state, transcription_text],
+    )
+
+    regenerate_btn.click(
+        fn=regenerate_subtitles,
+        inputs=[
+            transcription_text, words_state, words_per_chunk, gap_threshold,
+            font_dropdown, color_dropdown, font_size_slider,
+            position_dropdown, outline_slider, shadow_slider,
+            burn_into_video, audio_upload,
+        ],
+        outputs=[status_display, srt_output, ass_output, video_output, transcription_text],
     )
 
 
