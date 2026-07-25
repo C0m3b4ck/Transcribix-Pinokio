@@ -221,7 +221,7 @@ def extract_text_from_words(words: list) -> str:
 
 
 def burn_only_subtitles(
-    audio_file, words_per_chunk, font_name, font_color, font_size,
+    sub_path_state, audio_file, font_name, font_color, font_size,
     position_name, outline, shadow,
 ):
     """Burn existing subtitle files into video without regenerating."""
@@ -230,11 +230,10 @@ def burn_only_subtitles(
             raise gr.Error("Please upload a video file first.")
 
         font_name = _sanitize_font_name(font_name)
-        words_per_chunk = max(1, min(8, int(words_per_chunk)))
 
-        tmp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
-        ass_path = os.path.join(tmp_dir, "subtitles.ass")
-        if not os.path.exists(ass_path):
+        sub_path = sub_path_state
+
+        if not sub_path or not os.path.exists(sub_path):
             raise gr.Error("No subtitle file found. Run transcription or regenerate first.")
 
         prefs = {
@@ -248,9 +247,10 @@ def burn_only_subtitles(
             "shadow": shadow,
         }
 
+        tmp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
         input_path = audio_file.name if hasattr(audio_file, 'name') else audio_file
         video_out_path = os.path.join(tmp_dir, "output_with_subtitles.mp4")
-        success = burn_subtitles_to_video(input_path, ass_path, video_out_path, prefs)
+        success = burn_subtitles_to_video(input_path, sub_path, video_out_path, prefs)
         if not success:
             raise gr.Error("Failed to burn subtitles. Check ffmpeg and video file.")
 
@@ -319,6 +319,7 @@ def regenerate_subtitles(
             gr.update(value=ass_path, visible=True),
             video_output if video_output is not None else gr.update(visible=False),
             edited_text,
+            ass_path,
         )
     except gr.Error:
         raise
@@ -813,6 +814,7 @@ with gr.Blocks(
             ass_output = gr.File(label="ASS Subtitles (Styled)", visible=False)
             video_output = gr.File(label="Video with Subtitles", visible=False)
             words_state = gr.State([])
+            sub_path_state = gr.State("")
 
     # Event wiring
     model_dropdown.change(
@@ -841,13 +843,13 @@ with gr.Blocks(
             position_dropdown, outline_slider, shadow_slider,
             burn_into_video, audio_upload,
         ],
-        outputs=[status_display, srt_output, ass_output, video_output, transcription_text],
+        outputs=[status_display, srt_output, ass_output, video_output, transcription_text, sub_path_state],
     )
 
     burn_only_btn.click(
         fn=burn_only_subtitles,
         inputs=[
-            audio_upload, words_per_chunk, font_dropdown, color_dropdown, font_size_slider,
+            sub_path_state, audio_upload, font_dropdown, color_dropdown, font_size_slider,
             position_dropdown, outline_slider, shadow_slider,
         ],
         outputs=[status_display, video_output],
