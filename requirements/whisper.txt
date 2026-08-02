@@ -3,5 +3,3 @@ whisperx
 stable-ts
 openai-whisper
 pywhispercpp
-torch
-torchaudio

@@ -622,7 +622,6 @@ def burn_subtitles_to_video(
     Uses the subtitles filter for hardcoded subtitles.
     """
     import subprocess
-    import shlex
 
     # Validate paths exist before passing to ffmpeg
     if not os.path.isfile(video_path):
@@ -632,13 +631,10 @@ def burn_subtitles_to_video(
         print_error(f"Subtitle file not found: {subtitle_path}")
         return False
 
-    # Build ffmpeg filter for subtitles using shlex.quote for safe escaping
-    # The subtitles filter requires colon and backslash escaping within the filter string
-    sub_path_quoted = shlex.quote(subtitle_path)
-    # ffmpeg filter syntax needs additional escaping beyond shell quoting
+    # The subtitles filter requires colon, backslash and quote escaping within the filter string
     sub_path_escaped = subtitle_path.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
-    filter_str = f"subtitles={sub_path_quoted}"
+    filter_str = f"subtitles={sub_path_escaped}"
 
     cmd = [
         "ffmpeg", "-y",
@@ -1228,7 +1224,7 @@ if __name__ == "__main__":
     file_size = os.path.getsize(AUDIO_FILE) / (1024 * 1024)  # MB
     if file_size > 10240:
         print_error("File too large (>10GB).")
-        return
+        sys.exit(1)
     if file_size > 2048:
         print_warning(f"Large file ({file_size/1024:.1f} GB) — processing may be slow or fail due to memory limits.")
     print_info(f"Input file: {Style.UNDERLINE}{AUDIO_FILE}{Style.RESET} ({file_size:.1f} MB)")

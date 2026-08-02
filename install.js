@@ -12,6 +12,7 @@ module.exports = {
       }
     },
     {
+      when: "{{gpu === 'nvidia' && platform === 'linux'}}",
       method: "shell.run",
       params: {
         message: [

@@ -11,5 +11,3 @@ librosa
 funasr
 vosk
 numpy
-torch
-torchaudio
